@@ -9,9 +9,9 @@
 SoftwareSerial mySerial(7, 8);
 SIM7020GPRS sim7020(mySerial);
 
-#define FIREBASE_HOST "your_firebase_url"
-#define FIREBASE_AUTH "your_firebase_auth_key"
-#define FIREBASE_PATH "/path/to/your/data"
+#define FIREBASE_HOST "https://network-39f0b-default-rtdb.asia-southeast1.firebasedatabase.app"
+#define FIREBASE_AUTH "f328e60beb82551a7b2113b2512086bc47ee9975"
+#define FIREBASE_PATH "/Network/Realtime Database"
 
 FirebaseData firebaseData;
 
@@ -24,7 +24,7 @@ void setup() {
 
   sim7020.begin();
 
-  Blynk.begin("your_blynk_auth_key");
+  Blynk.begin("4xhUlcFHvGG9LD-8G_-_M40kbnqAcTof");
 
   Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
 }
