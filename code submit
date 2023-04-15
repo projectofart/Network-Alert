@@ -1,2 +1,67 @@
-thanhtung
-#include<iostream>
+#include <SoftwareSerial.h>
+#include <SIM7020GPRS.h>
+#include <FirebaseESP32.h>
+#include <BlynkSimpleEsp32.h>
+
+#define BLYNK_GREEN     "#23C48E"
+#define BLYNK_RED       "#D3435C"
+
+SoftwareSerial mySerial(7, 8);
+SIM7020GPRS sim7020(mySerial);
+
+#define FIREBASE_HOST "your_firebase_url"
+#define FIREBASE_AUTH "your_firebase_auth_key"
+#define FIREBASE_PATH "/path/to/your/data"
+
+FirebaseData firebaseData;
+
+const long interval = 120000; // 2 phút
+unsigned long previousMillis = 0;
+
+void setup() {
+  Serial.begin(9600);
+  mySerial.begin(9600);
+
+  sim7020.begin();
+
+  Blynk.begin("your_blynk_auth_key");
+
+  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+}
+
+void loop() {
+  Blynk.run();
+  sim7020.update();
+  Firebase.update();
+
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+
+    if (sim7020.getSignalQuality() >= 0) {
+      Firebase.setBool(firebaseData, FIREBASE_PATH, true);
+      Blynk.setProperty(V0, "color", BLYNK_GREEN);
+    } else {
+      static int failed_attempts = 0;
+      failed_attempts++;
+
+      if (failed_attempts >= 3) {
+        Blynk.notify("Mất kết nối với máy chủ");
+      }
+
+      if (failed_attempts == 1) {
+        Blynk.setProperty(V0, "color", BLYNK_RED);
+      } else if (failed_attempts == 2) {
+        Blynk.setProperty(V0, "color", BLYNK_RED);
+        delay(500);
+        Blynk.setProperty(V0, "color", BLYNK_BLACK);
+        delay(500);
+        Blynk.setProperty(V0, "color", BLYNK_RED);
+        delay(500);
+        Blynk.setProperty(V0, "color", BLYNK_BLACK);
+        delay(500);
+        Blynk.setProperty(V0, "color", BLYNK_RED);
+      }
+    }
+  }
+}
