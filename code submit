@@ -1,67 +1,80 @@
 #include <SoftwareSerial.h>
-#include <SIM7020GPRS.h>
-#include <FirebaseESP32.h>
-#include <BlynkSimpleEsp32.h>
+#include <BlynkSimpleStream.h>
+#define BLYNK_TEMPLATE_ID "TMPL6Up2GjwQ-"
+#define BLYNK_TEMPLATE_NAME "Final"
+#define BLYNK_AUTH_TOKEN "7Ju9bCD-D6toJjWiRUu5WY0SRvWKvp5n"
+#define RX_PIN 10
+#define TX_PIN 11
 
-#define BLYNK_GREEN     "#23C48E"
-#define BLYNK_RED       "#D3435C"
+SoftwareSerial sim7020e(RX_PIN, TX_PIN);
+char buffer[200];
+unsigned long lastCheckTime = 0;
+unsigned long checkInterval = 120000; // Thời gian giữa các lần kiểm tra AT+CENG: 2 phút
 
-SoftwareSerial mySerial(7, 8);
-SIM7020GPRS sim7020(mySerial);
+char auth[] = "7Ju9bCD-D6toJjWiRUu5WY0SRvWKvp5n";
 
-#define FIREBASE_HOST "https://network-39f0b-default-rtdb.asia-southeast1.firebasedatabase.app"
-#define FIREBASE_AUTH "f328e60beb82551a7b2113b2512086bc47ee9975"
-#define FIREBASE_PATH "/Network/Realtime Database"
-
-FirebaseData firebaseData;
-
-const long interval = 120000; // 2 phút
-unsigned long previousMillis = 0;
-
-void setup() {
+void setup()
+{
+  sim7020e.begin(9600);
   Serial.begin(9600);
-  mySerial.begin(9600);
-
-  sim7020.begin();
-
-  Blynk.begin("4xhUlcFHvGG9LD-8G_-_M40kbnqAcTof");
-
-  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+  Blynk.begin(Serial, auth);
+  Serial.println("Start...");
 }
 
-void loop() {
-  Blynk.run();
-  sim7020.update();
-  Firebase.update();
+#define LED_PIN V3
+int lowSignalCount = 0; // counter for low RSRP readings
 
-  unsigned long currentMillis = millis();
-  if (currentMillis - previousMillis >= interval) {
-    previousMillis = currentMillis;
+void loop()
+{
+  // Kiểm tra AT+CENG mỗi 2 phút
+  if (millis() - lastCheckTime >= checkInterval)
+  {
+    sim7020e.println("AT+CENG?");
+    delay(1000);
 
-    if (sim7020.getSignalQuality() >= 0) {
-      Firebase.setBool(firebaseData, FIREBASE_PATH, true);
-      Blynk.setProperty(V0, "color", BLYNK_GREEN);
-    } else {
-      static int failed_attempts = 0;
-      failed_attempts++;
+    int pos1 = 0;
+    int pos2 = 0;
+    bool lowSignal = false; // flag for low RSRP reading
 
-      if (failed_attempts >= 3) {
-        Blynk.notify("Mất kết nối với máy chủ");
-      }
+    while (sim7020e.available())
+    {
+      char c = sim7020e.read();
+      buffer[pos1++] = c;
+      if (c == '\n')
+      {
+        if (strstr(buffer, "+CENG") != NULL)
+        {
+          pos2 = pos1 - 5; // Lấy 5 ký tự cuối cùng của chuỗi để lấy giá trị RSRP và RSRQ
+          String ceng(buffer);
+          String rsrp = ceng.substring(20, 23); // Lấy giá trị RSRP (đơn vị dBm)
+          String rsrq = ceng.substring(28, 31); // Lấy giá trị RSRQ (đơn vị dB)
 
-      if (failed_attempts == 1) {
-        Blynk.setProperty(V0, "color", BLYNK_RED);
-      } else if (failed_attempts == 2) {
-        Blynk.setProperty(V0, "color", BLYNK_RED);
-        delay(500);
-        Blynk.setProperty(V0, "color", BLYNK_BLACK);
-        delay(500);
-        Blynk.setProperty(V0, "color", BLYNK_RED);
-        delay(500);
-        Blynk.setProperty(V0, "color", BLYNK_BLACK);
-        delay(500);
-        Blynk.setProperty(V0, "color", BLYNK_RED);
+          Serial.println("RSRP: " + rsrp + " dBm, RSRQ: " + rsrq + " dB");
+          Blynk.virtualWrite(V1, rsrp.toInt()); // Gửi giá trị RSRP đến Widget V1 trên Blynk
+          Blynk.virtualWrite(V2, rsrq.toInt()); // Gửi giá trị RSRQ đến Widget V2 trên Blynk
+
+          // Check if RSRP value is less than -90 dBm
+          if (rsrp.toInt() < -90) {
+            lowSignal = true; // set low signal flag
+            lowSignalCount++; // increment low signal counter
+          } else {
+            lowSignal = false; // reset low signal flag
+            lowSignalCount = 0; // reset low signal counter
+          }
+
+          // Turn on LED if RSRP is low for 3 consecutive check intervals
+          if (lowSignalCount >= 3) {
+            digitalWrite(LED_PIN, HIGH);
+          } else {
+            digitalWrite(LED_PIN, LOW);
+          }
+        }
+        pos1 = 0;
+        memset(buffer, 0, sizeof(buffer));
       }
     }
+    lastCheckTime = millis();
   }
+
+  Blynk.run();
 }
